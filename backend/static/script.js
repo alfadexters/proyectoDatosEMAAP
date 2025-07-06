@@ -1,7 +1,10 @@
-// backend/static/script.js (Versión Final con Narrativas Climáticas)
+// backend/static/script.js (Versión Final para Producción)
 
-// --- CONFIGURACIÓN Y ESTADO GLOBAL ---
-const API_URL = 'http://127.0.0.1:5000';
+// --- CORRECCIÓN CLAVE ---
+// En lugar de una dirección fija, usamos una cadena vacía.
+// Esto hace que el navegador busque las APIs en el mismo dominio
+// desde donde se cargó la página (ej: tu-app.onrender.com/api/estaciones)
+const API_URL = ''; 
 let todasLasEstaciones = [];
 let datosDeCalidad = [];
 let estacionesSeleccionadas = new Set();
@@ -295,40 +298,30 @@ function dibujarGraficoReconstruccion(datos, estacion) {
     graficoReconstruccion = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, title: { display: true, text: `Reconstrucción de datos para la estación ${estacion}` }}, scales: { y: { beginAtZero: true }}}});
 }
 
-// --- NUEVO: SECCIÓN 4: NARRATIVAS CLIMÁTICAS ---
-
+// --- SECCIÓN 4: NARRATIVAS CLIMÁTICAS ---
 function inicializarSeccionNarrativas() {
     const buttons = document.querySelectorAll('.narrativa-button');
     buttons.forEach(button => {
-        // Evitar añadir listeners múltiples
         if (button.dataset.initialized) return;
         button.dataset.initialized = 'true';
-
         button.addEventListener('click', () => {
             const tema = button.dataset.tema;
             generarNarrativa(tema);
         });
     });
 }
-
 async function generarNarrativa(tema) {
     const loadingDiv = document.getElementById('narrativa-loading');
     const resultadoDiv = document.getElementById('narrativa-resultado');
-
     loadingDiv.classList.remove('hidden');
     resultadoDiv.classList.add('hidden');
-
     try {
         const response = await fetch(`${API_URL}/api/generar-narrativa?tema=${tema}`);
         const result = await response.json();
-
         if (!response.ok) {
             throw new Error(result.error || 'Error desconocido al generar la narrativa.');
         }
-
-        // Usamos la librería 'marked' para convertir el texto Markdown de la IA a HTML
         resultadoDiv.innerHTML = marked.parse(result.narrativa);
-
     } catch (error) {
         console.error('Error al generar la narrativa:', error);
         resultadoDiv.innerHTML = `<p class="text-red-500">Hubo un error al contactar a la IA. Por favor, inténtalo de nuevo más tarde.</p>`;
