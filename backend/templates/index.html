@@ -1,0 +1,201 @@
+<!-- backend/templates/index.html (Versión con Diseño Premium) -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Climático - Quito</title>
+    
+    <!-- Librerías de Estilos -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="text-slate-800">
+
+    <!-- Barra de Navegación -->
+    <nav class="bg-white/80 backdrop-blur-xl sticky top-0 z-20 shadow-sm border-b border-slate-200">
+        <div class="container mx-auto px-6">
+            <div class="flex justify-between items-center py-3">
+                <div class="flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M21.5 12.5c0-5.25-4.25-9.5-9.5-9.5S2.5 7.25 2.5 12.5c0 4.23 2.75 7.82 6.5 9.06"></path><path d="M12 2v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="M2 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="M12 20v2"></path><path d="m19.07 19.07-1.41-1.41"></path><path d="M22 12h-2"></path><path d="m19.07 4.93-1.41 1.41"></path><circle cx="12" cy="12" r="2"></circle><path d="M12 16.5A4.5 4.5 0 0 0 7.5 12h0A4.5 4.5 0 0 0 12 7.5v0A4.5 4.5 0 0 1 16.5 12h0A4.5 4.5 0 0 1 12 16.5Z"></path></svg>
+                    <div class="text-xl font-extrabold text-slate-900 tracking-tighter">Clima Quito Interactivo</div>
+                </div>
+                <div class="flex space-x-8 text-sm font-semibold">
+                    <button id="nav-explorador" class="nav-link active text-indigo-600">Explorador</button>
+                    <button id="nav-calidad" class="nav-link text-slate-600 hover:text-indigo-600">Análisis de Calidad</button>
+                    <button id="nav-reconstruccion" class="nav-link text-slate-600 hover:text-indigo-600">Reconstrucción</button>
+                    <button id="nav-narrativas" class="nav-link text-slate-600 hover:text-indigo-600">Narrativas IA</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Contenedor Principal de Secciones -->
+    <div class="container mx-auto p-4 sm:p-6">
+
+        <!-- Sección 1: Explorador de Datos -->
+        <section id="section-explorador" class="page-section">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tighter">Explorador de Datos y Microclimas</h1>
+                <p class="text-lg text-slate-600 mt-3 max-w-2xl mx-auto">Compara datos de Precipitación, Temperatura y Nivel de Agua entre estaciones.</p>
+            </header>
+            <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-1 card p-6">
+                    <h2 class="text-xl font-bold mb-5 text-slate-900">Controles</h2>
+                    <div class="space-y-5">
+                        <div>
+                            <label for="variable-select" class="block text-sm font-medium text-slate-700 mb-2">1. Selecciona una variable:</label>
+                            <select id="variable-select" class="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                                <option value="precipitacion">Precipitación</option>
+                                <option value="temperatura">Temperatura</option>
+                                <option value="nivelAgua">Nivel de Agua</option>
+                            </select>
+                        </div>
+                        <div>
+                             <label class="block text-sm font-medium text-slate-700 mb-2">2. Elige estaciones (máx 3):</label>
+                             <div id="station-list" class="h-64 overflow-y-auto border border-slate-300 rounded-lg p-3 bg-slate-50">
+                                <p class="text-slate-500">Cargando estaciones...</p>
+                             </div>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold mb-2 text-slate-900">Mapa de Estaciones</h3>
+                            <div id="map" class="h-80 rounded-lg border border-slate-300"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 card p-6 flex flex-col">
+                    <h2 id="chart-title" class="text-xl font-bold mb-4 text-center text-slate-900">Gráfico de Datos</h2>
+                    <div id="loading-indicator" class="text-center hidden">
+                        <p class="text-indigo-600">Cargando datos del gráfico...</p>
+                    </div>
+                    <div class="relative flex-grow h-96 min-h-[24rem]">
+                        <canvas id="myChart"></canvas>
+                    </div>
+                </div>
+            </main>
+        </section>
+
+        <!-- Sección 2: Análisis de Calidad -->
+        <section id="section-calidad" class="page-section hidden">
+             <header class="text-center mb-10">
+                <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tighter">Análisis de Calidad de Datos</h1>
+                <p class="text-lg text-slate-600 mt-3 max-w-2xl mx-auto">Ranking de estaciones según la disponibilidad de sus datos históricos.</p>
+            </header>
+            <main class="card p-6">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Estación</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-100 rounded-l-lg" data-sort="calidad_precipitacion">Precipitación (%) &#x2195;</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-100" data-sort="calidad_temperatura">Temperatura (%) &#x2195;</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider sortable cursor-pointer hover:bg-slate-100 rounded-r-lg" data-sort="calidad_nivelAgua">Nivel de Agua (%) &#x2195;</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calidad-table-body" class="bg-white divide-y divide-slate-200">
+                        </tbody>
+                    </table>
+                </div>
+            </main>
+        </section>
+
+        <!-- Sección 3: Reconstrucción de Datos -->
+        <section id="section-reconstruccion" class="page-section hidden">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tighter">Herramientas de Reconstrucción</h1>
+                <p class="text-lg text-slate-600 mt-3 max-w-2xl mx-auto">Rellena los vacíos en las series de tiempo usando métodos estadísticos.</p>
+            </header>
+            <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-1 card p-6">
+                    <h2 class="text-xl font-bold mb-5 text-slate-900">Configuración</h2>
+                    <div class="space-y-5">
+                        <div>
+                            <label for="recon-variable-select" class="block text-sm font-medium text-slate-700 mb-2">1. Selecciona variable:</label>
+                            <select id="recon-variable-select" class="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                                <option value="" disabled selected>Elige una variable</option>
+                                <option value="precipitacion">Precipitación</option>
+                                <option value="temperatura">Temperatura</option>
+                                <option value="nivelAgua">Nivel de Agua</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="recon-station-select" class="block text-sm font-medium text-slate-700 mb-2">2. Selecciona estación:</label>
+                            <select id="recon-station-select" class="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" disabled>
+                                <option value="" disabled selected>Elige una estación</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="recon-method-select" class="block text-sm font-medium text-slate-700 mb-2">3. Selecciona método:</label>
+                            <select id="recon-method-select" class="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                                <option value="lineal">Interpolación Lineal</option>
+                                <option value="promedio_movil">Promedio Móvil (7 días)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="recon-button" class="mt-6 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 transform hover:scale-105">Reconstruir Datos</button>
+                    
+                    <div id="recon-quality-info" class="hidden mt-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-2">Resultados de Disponibilidad</h3>
+                        <div class="space-y-1">
+                            <p class="text-sm text-slate-700">Disponibilidad Original: <span id="quality-before" class="font-bold text-red-600">--%</span></p>
+                            <p class="text-sm text-slate-700">Completitud de la Serie Final: <span id="quality-after" class="font-bold text-green-600">--%</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 card p-6 flex flex-col">
+                    <h2 id="recon-chart-title" class="text-xl font-bold mb-4 text-center text-slate-900">Gráfico de Reconstrucción</h2>
+                     <div id="recon-loading-indicator" class="text-center hidden">
+                        <p class="text-indigo-600">Reconstruyendo y cargando datos...</p>
+                    </div>
+                    <div class="relative flex-grow h-96 min-h-[24rem]">
+                        <canvas id="reconstructionChart"></canvas>
+                    </div>
+                </div>
+            </main>
+        </section>
+        
+        <!-- Sección 4: Narrativas Climáticas -->
+        <section id="section-narrativas" class="page-section hidden">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tighter">Narrativas Climáticas con IA</h1>
+                <p class="text-lg text-slate-600 mt-3 max-w-2xl mx-auto">Descubre historias interesantes ocultas en los datos, generadas por Gemini.</p>
+            </header>
+            <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-1 card p-6">
+                    <h2 class="text-xl font-bold mb-5 text-slate-900">Elige un Tema</h2>
+                    <div class="space-y-4">
+                        <p class="text-sm text-slate-600">Selecciona un evento climático para que la IA genere un análisis sobre él.</p>
+                        <button class="narrativa-button w-full text-white font-semibold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 focus:ring-red-500" data-tema="dia_mas_caluroso">Día más Caluroso del Año</button>
+                        <button class="narrativa-button w-full text-white font-semibold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 focus:ring-indigo-500" data-tema="dia_mas_frio">Día más Frío del Año</button>
+                        <button class="narrativa-button w-full text-white font-semibold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 focus:ring-cyan-500" data-tema="dia_mas_lluvioso">Día más Lluvioso del Año</button>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 card p-8 min-h-[24rem]">
+                    <h2 class="text-xl font-bold mb-4 text-center text-slate-900">Análisis de la IA</h2>
+                    <div id="narrativa-loading" class="text-center hidden">
+                        <p class="text-indigo-600">La IA está analizando los datos y escribiendo... por favor espera.</p>
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mt-4"></div>
+                    </div>
+                    <div id="narrativa-resultado" class="text-slate-700 leading-relaxed prose prose-lg prose-indigo">
+                        <p class="text-center text-slate-500">Selecciona un tema para comenzar.</p>
+                    </div>
+                </div>
+            </main>
+        </section>
+
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

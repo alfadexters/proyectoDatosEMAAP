@@ -1,0 +1,86 @@
+/* backend/static/styles.css */
+
+/* --- Configuración Base y Tipografía --- */
+body {
+    font-family: 'Inter', sans-serif;
+    /* Fondo con gradiente sutil para dar profundidad */
+    background-color: #f0f4f8; /* Un azul-gris muy claro */
+    background-image: radial-gradient(circle at top left, #ffffff 40%, transparent 70%),
+                      radial-gradient(circle at bottom right, #e0e7ff 30%, transparent 60%);
+    background-attachment: fixed;
+}
+
+/* --- Estilos de Navegación --- */
+.nav-link {
+    transition: all 0.3s ease-in-out;
+    position: relative;
+    padding-bottom: 8px;
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 3px;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(to right, #6366f1, #818cf8); /* Gradiente Indigo */
+    border-radius: 2px;
+    transition: width 0.3s ease-in-out;
+}
+
+.nav-link.active {
+    color: #4338ca; /* Indigo-700 */
+    font-weight: 700;
+}
+
+.nav-link.active::after, .nav-link:hover::after {
+    width: 100%;
+}
+
+/* --- Estilos de Tarjetas y Contenedores --- */
+.card {
+    background-color: rgba(255, 255, 255, 0.85); /* Blanco semi-transparente */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 1.25rem; /* rounded-2xl */
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+    transition: all 0.3s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-8px) scale(1.01);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.15);
+}
+
+/* --- Animación para las Secciones --- */
+.page-section {
+    animation: fadeIn 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* --- Estilos para la prosa generada por la IA --- */
+.prose h1, .prose h2, .prose h3 {
+    color: #1e293b; /* slate-800 */
+}
+
+.prose p {
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+.prose strong {
+    color: #4f46e5; /* indigo-600 */
+}
