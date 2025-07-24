@@ -1,9 +1,6 @@
-// backend/static/script.js (Versión Final para Producción)
+// backend/static/script.js (Versión con Análisis Comparativo y Promedio Móvil)
 
-// --- CORRECCIÓN CLAVE ---
-// En lugar de una dirección fija, usamos una cadena vacía.
-// Esto hace que el navegador busque las APIs en el mismo dominio
-// desde donde se cargó la página (ej: tu-app.onrender.com/api/estaciones)
+// --- CONFIGURACIÓN Y ESTADO GLOBAL ---
 const API_URL = ''; 
 let todasLasEstaciones = [];
 let datosDeCalidad = [];
@@ -11,6 +8,11 @@ let estacionesSeleccionadas = new Set();
 let mapa;
 let grafico;
 let graficoReconstruccion;
+let graficoComparativo; // Nuevo: para el gráfico de comparación
+let exploradorDatepicker;
+let reconDatepicker;
+let datosGraficoActual = [];
+
 const MAX_SELECCION = 3;
 const CHART_COLORS = ['#4A90E2', '#F5A623', '#417505', '#BD10E0', '#9013FE'];
 
@@ -25,6 +27,8 @@ document.addEventListener('DOMContentLoaded', () => {
     inicializarMapa();
     cargarEstaciones();
     setupNavigation();
+    inicializarDatepickers();
+    setupExportButtons();
 });
 
 // --- LÓGICA DE NAVEGACIÓN ---
@@ -37,23 +41,18 @@ function setupNavigation() {
             const targetId = `section-${link.id.split('-')[1]}`;
             pageSections.forEach(section => section.classList.add('hidden'));
             navLinks.forEach(nav => {
-                nav.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-                nav.classList.add('text-gray-500');
+                nav.classList.remove('active', 'text-indigo-600');
+                nav.classList.add('text-slate-600');
             });
 
             document.getElementById(targetId).classList.remove('hidden');
-            link.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-            link.classList.remove('text-gray-500');
+            link.classList.add('active', 'text-indigo-600');
+            link.classList.remove('text-slate-600');
 
-            if (targetId === 'section-calidad' && datosDeCalidad.length === 0) {
-                cargarCalidadDatos();
-            }
-            if (targetId === 'section-reconstruccion' && todasLasEstaciones.length > 0) {
-                inicializarSeccionReconstruccion();
-            }
-            if (targetId === 'section-narrativas') {
-                inicializarSeccionNarrativas();
-            }
+            if (targetId === 'section-calidad' && datosDeCalidad.length === 0) cargarCalidadDatos();
+            if (targetId === 'section-reconstruccion' && todasLasEstaciones.length > 0) inicializarSeccionReconstruccion();
+            if (targetId === 'section-narrativas') inicializarSeccionNarrativas();
+            if (targetId === 'section-comparativo' && todasLasEstaciones.length > 0) inicializarSeccionComparativo();
         });
     });
 }
@@ -73,6 +72,7 @@ async function cargarEstaciones() {
         if (!Array.isArray(jsonData)) throw new Error("La respuesta no es un array.");
         todasLasEstaciones = jsonData;
         document.getElementById('variable-select').addEventListener('change', handleVariableChange);
+        document.getElementById('suavizar-checkbox').addEventListener('change', actualizarGrafico);
         actualizarVistaPorVariable();
     } catch (error) {
         console.error('Error al cargar las estaciones:', error);
@@ -121,24 +121,42 @@ async function actualizarGrafico() {
     const variableActual = document.getElementById('variable-select').value;
     const tituloGrafico = document.getElementById('chart-title');
     const loadingIndicator = document.getElementById('loading-indicator');
+    const exportButtons = document.getElementById('export-buttons');
+    const suavizar = document.getElementById('suavizar-checkbox').checked;
     const nombreBonito = VARIABLE_NOMBRES[variableActual] || "Datos";
+
+    exportButtons.classList.add('hidden');
+    datosGraficoActual = [];
+
     if (estacionesSeleccionadas.size === 0) {
         if (grafico) grafico.destroy();
         grafico = null;
         tituloGrafico.innerText = 'Gráfico de Datos';
         return;
     }
+
     loadingIndicator.classList.remove('hidden');
     tituloGrafico.innerText = `Cargando datos para ${nombreBonito}...`;
     const codigos = Array.from(estacionesSeleccionadas).join(',');
+    
+    const selectedDates = exploradorDatepicker.selectedDates;
+    let url = `${API_URL}/api/datos?variable=${variableActual}&estaciones=${codigos}&suavizar=${suavizar}`;
+    if (selectedDates.length === 2) {
+        const fechaInicio = selectedDates[0].toISOString().split('T')[0];
+        const fechaFin = selectedDates[1].toISOString().split('T')[0];
+        url += `&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+    }
+
     try {
-        const response = await fetch(`${API_URL}/api/datos?variable=${variableActual}&estaciones=${codigos}`);
+        const response = await fetch(url);
         const datos = await response.json();
         if (datos && datos.length > 0) {
-            prepararYDibujarGrafico(datos, variableActual);
+            datosGraficoActual = datos;
+            prepararYDibujarGrafico(datos, variableActual, suavizar);
             tituloGrafico.innerText = `Gráfico de ${nombreBonito}`;
+            exportButtons.classList.remove('hidden');
         } else {
-             tituloGrafico.innerText = 'No hay datos para las estaciones seleccionadas.';
+             tituloGrafico.innerText = 'No hay datos para las estaciones y fechas seleccionadas.';
              if (grafico) grafico.destroy();
         }
     } catch (error) {
@@ -148,19 +166,37 @@ async function actualizarGrafico() {
         loadingIndicator.classList.add('hidden');
     }
 }
-function prepararYDibujarGrafico(datos, variable) {
+function prepararYDibujarGrafico(datos, variable, suavizar) {
     const ctx = document.getElementById('myChart').getContext('2d');
     const labels = datos.map(d => d.fecha);
     const nombreEjeY = VARIABLE_NOMBRES[variable] || variable;
-    const datasets = Array.from(estacionesSeleccionadas).map((codigo, index) => ({
-        label: codigo,
-        data: datos.map(d => d[codigo]),
-        borderColor: CHART_COLORS[index % CHART_COLORS.length],
-        backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '33',
-        tension: 0.1,
-        fill: false,
-        spanGaps: true
-    }));
+    
+    const datasets = [];
+    Array.from(estacionesSeleccionadas).forEach((codigo, index) => {
+        // Serie de datos original
+        datasets.push({
+            label: codigo,
+            data: datos.map(d => d[codigo]),
+            borderColor: CHART_COLORS[index % CHART_COLORS.length],
+            backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '33',
+            tension: 0.4,
+            fill: false,
+            spanGaps: true
+        });
+        // Serie de datos suavizada (si está activada)
+        if (suavizar && datos[0][`${codigo}_suavizado`] !== undefined) {
+            datasets.push({
+                label: `${codigo} (Promedio Móvil)`,
+                data: datos.map(d => d[`${codigo}_suavizado`]),
+                borderColor: CHART_COLORS[index % CHART_COLORS.length],
+                borderWidth: 2,
+                borderDash: [5, 5], // Línea punteada
+                pointRadius: 0, // Sin puntos
+                fill: false,
+            });
+        }
+    });
+
     if (grafico) grafico.destroy();
     grafico = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: nombreEjeY.toUpperCase() }}}, plugins: { legend: { position: 'top' }, title: { display: true, text: `Datos históricos para ${nombreEjeY}` }}}});
 }
@@ -245,8 +281,17 @@ async function ejecutarReconstruccion() {
     qualityInfoDiv.classList.add('hidden');
     chartTitle.innerText = `Reconstruyendo datos para ${estacion}...`;
     if (graficoReconstruccion) graficoReconstruccion.destroy();
+    
+    const selectedDates = reconDatepicker.selectedDates;
+    let url = `${API_URL}/api/reconstruir-datos?variable=${variable}&estacion=${estacion}&metodo=${metodo}`;
+    if (selectedDates.length === 2) {
+        const fechaInicio = selectedDates[0].toISOString().split('T')[0];
+        const fechaFin = selectedDates[1].toISOString().split('T')[0];
+        url += `&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+    }
+
     try {
-        const response = await fetch(`${API_URL}/api/reconstruir-datos?variable=${variable}&estacion=${estacion}&metodo=${metodo}`);
+        const response = await fetch(url);
         const result = await response.json();
         if (!response.ok) {
             if (result.error === "Calidad de datos insuficiente") {
@@ -329,4 +374,178 @@ async function generarNarrativa(tema) {
         loadingDiv.classList.add('hidden');
         resultadoDiv.classList.remove('hidden');
     }
+}
+
+// --- NUEVO: SECCIÓN 5: ANÁLISIS COMPARATIVO ---
+function inicializarSeccionComparativo() {
+    const variableSelect = document.getElementById('comp-variable-select');
+    const stationSelect = document.getElementById('comp-station-select');
+    const yearListDiv = document.getElementById('comp-year-list');
+    const compButton = document.getElementById('comp-button');
+
+    if (compButton.dataset.initialized) return;
+    compButton.dataset.initialized = 'true';
+
+    variableSelect.addEventListener('change', async () => {
+        const variable = variableSelect.value;
+        stationSelect.innerHTML = '<option value="" disabled selected>Elige una estación</option>';
+        stationSelect.disabled = false;
+        yearListDiv.innerHTML = ''; // Limpiar años
+
+        const estacionesFiltradas = todasLasEstaciones.filter(est => est[variable]);
+        estacionesFiltradas.forEach(est => {
+            const option = document.createElement('option');
+            option.value = est.codigo;
+            option.textContent = `${est.nombre} (${est.codigo})`;
+            stationSelect.appendChild(option);
+        });
+
+        // Cargar los años disponibles para esta variable
+        const response = await fetch(`${API_URL}/api/comparativo-anual?variable=${variable}`);
+        const result = await response.json();
+        if (result.anios_disponibles) {
+            result.anios_disponibles.reverse().forEach(anio => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center';
+                div.innerHTML = `<input type="checkbox" id="year-${anio}" value="${anio}" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"><label for="year-${anio}" class="ml-2 text-sm">${anio}</label>`;
+                yearListDiv.appendChild(div);
+            });
+        }
+    });
+
+    compButton.addEventListener('click', ejecutarComparativo);
+}
+
+async function ejecutarComparativo() {
+    const variable = document.getElementById('comp-variable-select').value;
+    const estacion = document.getElementById('comp-station-select').value;
+    const mes = document.getElementById('comp-month-select').value;
+    const aniosSeleccionados = Array.from(document.querySelectorAll('#comp-year-list input:checked')).map(el => el.value);
+    const loadingIndicator = document.getElementById('comp-loading-indicator');
+    const chartTitle = document.getElementById('comp-chart-title');
+
+    if (!variable || !estacion || aniosSeleccionados.length < 2) {
+        alert('Por favor, selecciona una variable, una estación y al menos dos años para comparar.');
+        return;
+    }
+
+    loadingIndicator.classList.remove('hidden');
+    chartTitle.innerText = `Generando comparación para ${estacion}...`;
+    if (graficoComparativo) graficoComparativo.destroy();
+
+    const url = `${API_URL}/api/comparativo-anual?variable=${variable}&estacion=${estacion}&mes=${mes}&anios=${aniosSeleccionados.join(',')}`;
+
+    try {
+        const response = await fetch(url);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error del servidor');
+
+        if (result.data && result.data.length > 0) {
+            dibujarGraficoComparativo(result.data, variable);
+            const nombreMes = document.getElementById('comp-month-select').options[mes-1].text;
+            chartTitle.innerText = `Comparación de ${VARIABLE_NOMBRES[variable]} en ${nombreMes} para ${estacion}`;
+        } else {
+            chartTitle.innerText = 'No hay datos suficientes para la comparación.';
+        }
+    } catch (error) {
+        console.error('Error al generar la comparación:', error);
+        chartTitle.innerText = 'Error al generar la comparación.';
+    } finally {
+        loadingIndicator.classList.add('hidden');
+    }
+}
+
+function dibujarGraficoComparativo(datos, variable) {
+    const ctx = document.getElementById('comparativoChart').getContext('2d');
+    const labels = datos.map(d => d.anio);
+    const valores = datos.map(d => d.valor);
+    const nombreMetrica = variable === 'precipitacion' ? 'Precipitación Total (mm)' : `Promedio de ${VARIABLE_NOMBRES[variable]}`;
+
+    if (graficoComparativo) {
+        graficoComparativo.destroy();
+    }
+
+    graficoComparativo = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: nombreMetrica,
+                data: valores,
+                backgroundColor: 'rgba(79, 70, 229, 0.8)',
+                borderColor: 'rgba(79, 70, 229, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: nombreMetrica }
+                }
+            }
+        }
+    });
+}
+
+
+// --- FUNCIONES DE UTILIDAD (DATE PICKER Y EXPORTACIÓN) ---
+
+function inicializarDatepickers() {
+    const options = {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "F j, Y",
+        onClose: function(selectedDates, dateStr, instance) {
+            if (instance.element.id === 'explorador-datepicker') {
+                actualizarGrafico();
+            }
+        }
+    };
+    exploradorDatepicker = flatpickr("#explorador-datepicker", options);
+    reconDatepicker = flatpickr("#recon-datepicker", options);
+}
+
+function setupExportButtons() {
+    document.getElementById('export-csv-button').addEventListener('click', exportToCSV);
+    document.getElementById('export-png-button').addEventListener('click', exportToPNG);
+}
+
+function exportToCSV() {
+    if (datosGraficoActual.length === 0) {
+        alert("No hay datos para exportar.");
+        return;
+    }
+    const headers = Object.keys(datosGraficoActual[0]);
+    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+
+    datosGraficoActual.forEach(row => {
+        const values = headers.map(header => row[header]);
+        csvContent += values.join(",") + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "datos_climaticos.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function exportToPNG() {
+    if (!grafico) {
+        alert("No hay gráfico para exportar.");
+        return;
+    }
+    const link = document.createElement('a');
+    link.href = grafico.toBase64Image();
+    link.download = 'grafico_climatico.png';
+    link.click();
 }

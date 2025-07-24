@@ -1,8 +1,7 @@
-# main.py - Versión Final con Narrativas Climáticas (IA Integrada)
+# main.py - Versión con Corrección en Análisis Comparativo
 
 import pandas as pd
 import requests
-import os
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 
@@ -12,8 +11,7 @@ CORS(app)
 
 URL_GEO = "https://paramh2o.aguaquito.gob.ec/estacion/getjson"
 URL_VAR = "https://paramh2o.aguaquito.gob.ec/ajax/estacion_consulta/?variable_id={}"
-# URL de la API de Gemini. Dejar la API Key vacía para que Canvas la gestione.
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyB-6-5qKUcBl-p0NWGaNcYUfJyZzlKk39o"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="
 
 VARIABLES = {
     "precipitacion": {"id": 1, "filename": "precipitacionEstacionesDiario.csv"},
@@ -51,6 +49,7 @@ for nombre_var, var_info in VARIABLES.items():
 # 3. Cargar los datos de mediciones y calcular calidad
 datos_mediciones = {}
 calidad_datos = {} 
+anios_disponibles = {} 
 
 for nombre_var, var_info in VARIABLES.items():
     try:
@@ -64,6 +63,8 @@ for nombre_var, var_info in VARIABLES.items():
         puntaje_calidad = (df.count() / len(df)) * 100
         calidad_datos[nombre_var] = puntaje_calidad.round(2).to_dict()
         
+        anios_disponibles[nombre_var] = sorted(df['fecha'].dt.year.unique().tolist())
+
         cols = ['fecha'] + [col for col in df.columns if col != 'fecha']
         df = df[cols]
         datos_mediciones[nombre_var] = df
@@ -93,17 +94,30 @@ def get_estaciones():
 def get_datos():
     variable = request.args.get('variable')
     estaciones_cod_str = request.args.get('estaciones')
+    fecha_inicio = request.args.get('fecha_inicio')
+    fecha_fin = request.args.get('fecha_fin')
+    suavizar = request.args.get('suavizar') == 'true'
     
     if not variable or not estaciones_cod_str or variable not in datos_mediciones:
         return jsonify({"error": "Parámetros inválidos"}), 400
         
     estaciones_cod = estaciones_cod_str.split(',')
     df = datos_mediciones[variable]
+
+    if fecha_inicio and fecha_fin:
+        df = df[(df['fecha'] >= fecha_inicio) & (df['fecha'] <= fecha_fin)]
+
     columnas_a_seleccionar = ['fecha'] + [cod for cod in estaciones_cod if cod in df.columns]
     
     if len(columnas_a_seleccionar) <= 1: return jsonify([])
 
     datos_filtrados = df[columnas_a_seleccionar].copy()
+
+    if suavizar:
+        for cod in estaciones_cod:
+            if cod in datos_filtrados.columns:
+                datos_filtrados[f"{cod}_suavizado"] = datos_filtrados[cod].rolling(window=7, center=True, min_periods=1).mean()
+
     datos_filtrados['fecha'] = datos_filtrados['fecha'].dt.strftime('%Y-%m-%d')
     datos_filtrados_final = datos_filtrados.astype(object).where(pd.notnull(datos_filtrados), None)
     return jsonify(datos_filtrados_final.to_dict('records'))
@@ -123,17 +137,22 @@ def reconstruir_datos():
     variable = request.args.get('variable')
     estacion_cod = request.args.get('estacion')
     metodo = request.args.get('metodo')
+    fecha_inicio = request.args.get('fecha_inicio')
+    fecha_fin = request.args.get('fecha_fin')
 
     if not all([variable, estacion_cod, metodo]) or variable not in datos_mediciones:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
     df_original = datos_mediciones[variable][['fecha', estacion_cod]].copy()
     
+    if fecha_inicio and fecha_fin:
+        df_original = df_original[(df_original['fecha'] >= fecha_inicio) & (df_original['fecha'] <= fecha_fin)]
+
     total_rows = len(df_original)
     non_null_original = df_original[estacion_cod].count()
     calidad_antes = round((non_null_original / total_rows) * 100, 2) if total_rows > 0 else 0
 
-    if calidad_antes < 60:
+    if calidad_antes < 65:
         return jsonify({"error": "Calidad de datos insuficiente", "quality_before": calidad_antes}), 400
 
     if metodo == 'lineal':
@@ -175,7 +194,6 @@ def generar_narrativa():
         
         prompt = f"Actúa como un meteorólogo y divulgador científico para una página web sobre el clima de Quito, Ecuador. Escribe una narrativa corta y atractiva (máximo 3 párrafos) sobre el siguiente dato que hemos encontrado en nuestros registros históricos. Dato: El día más frío del último año fue el {fecha}, registrado en la estación '{nombre_estacion} ({codigo_estacion})', con una temperatura mínima de {min_temp:.2f}°C. En tu narrativa, explica qué podría significar esta temperatura para la zona, si es un evento común, y qué se podría sentir a esa temperatura en esa ubicación específica. Usa un lenguaje sencillo y cautivador."
 
-    # --- NUEVO: Lógica para el día más caluroso ---
     elif tema == 'dia_mas_caluroso':
         df_temp = datos_mediciones['temperatura'].drop(columns=['fecha'])
         max_temp = df_temp.max().max()
@@ -199,7 +217,6 @@ def generar_narrativa():
     else:
         return jsonify({"error": "Tema no soportado"}), 400
 
-    # Llamada a la API de Gemini
     try:
         payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
         headers = {'Content-Type': 'application/json'}
@@ -213,6 +230,46 @@ def generar_narrativa():
     except Exception as e:
         print(f"Error llamando a la API de Gemini: {e}")
         return jsonify({"error": "No se pudo generar la narrativa desde la IA."}), 500
+
+# --- ENDPOINT CORREGIDO: Para el Análisis Comparativo ---
+@app.route('/api/comparativo-anual')
+def get_comparativo_anual():
+    variable = request.args.get('variable')
+    estacion_cod = request.args.get('estacion')
+    mes_str = request.args.get('mes')
+    anios_str = request.args.get('anios')
+
+    # Caso 1: El frontend solo pide la lista de años para una variable
+    if variable and not all([estacion_cod, mes_str, anios_str]):
+        return jsonify({
+            "anios_disponibles": anios_disponibles.get(variable, [])
+        })
+
+    # Caso 2: El frontend pide los datos para la comparación
+    if not all([variable, estacion_cod, mes_str, anios_str]):
+        return jsonify({"error": "Parámetros inválidos"}), 400
+    
+    try:
+        mes = int(mes_str)
+        anios = [int(a) for a in anios_str.split(',')]
+    except (ValueError, TypeError):
+        return jsonify({"error": "Parámetros de mes o años inválidos"}), 400
+
+    df = datos_mediciones[variable]
+    df_filtrado = df[df['fecha'].dt.month == mes]
+    df_filtrado = df_filtrado[df_filtrado['fecha'].dt.year.isin(anios)]
+
+    if estacion_cod not in df_filtrado.columns:
+        return jsonify({"data": []})
+
+    if variable == 'precipitacion':
+        resultado = df_filtrado.groupby(df_filtrado['fecha'].dt.year)[estacion_cod].sum()
+    else:
+        resultado = df_filtrado.groupby(df_filtrado['fecha'].dt.year)[estacion_cod].mean()
+    
+    datos_formateados = [{'anio': anio, 'valor': round(valor, 2)} for anio, valor in resultado.items()]
+    
+    return jsonify({"data": datos_formateados})
 
 
 # --- RUTA PARA SERVIR LA PÁGINA WEB ---
