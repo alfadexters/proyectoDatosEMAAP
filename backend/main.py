@@ -11,7 +11,7 @@ CORS(app)
 
 URL_GEO = "https://paramh2o.aguaquito.gob.ec/estacion/getjson"
 URL_VAR = "https://paramh2o.aguaquito.gob.ec/ajax/estacion_consulta/?variable_id={}"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAIQtTjVjJj0fIC6kU5psOn5EtgGNDX9TM"
 
 VARIABLES = {
     "precipitacion": {"id": 1, "filename": "precipitacionEstacionesDiario.csv"},
